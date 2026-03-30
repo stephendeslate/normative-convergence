@@ -26,6 +26,9 @@ report/
 **/BUILD_REPORT.md
 **/ARCHIVED.md
 
+# === PRIVATE: Trial-level docs that may contain methodology ===
+trial*/README.md
+
 # === Secrets & Sessions ===
 .env
 .env.local

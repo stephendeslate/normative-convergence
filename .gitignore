@@ -1,0 +1,48 @@
+# === PRIVATE: Methodology & Scoring ===
+METHODOLOGY*.md
+TRIAL_PROTOCOL.md
+SCORING_DIMENSIONS.md
+EXPERIMENT_DESIGN.md
+CROSS_REFERENCE.md
+FAILURE-MODES.md
+ANALYSIS.md
+CLAUDE.md
+phases.json
+scorer/
+report/
+
+# === PRIVATE: Results & Scores ===
+**/results/
+**/results-*/
+**/scores/
+**/scorer-snapshot/
+**/*-scores.json
+**/*-results.json
+**/scores.json
+**/claims-manifest.json
+**/SCORE_REPORT.md
+**/RED_TEAM_REPORT.md
+**/SCORE_RECONCILIATION.md
+**/BUILD_REPORT.md
+**/ARCHIVED.md
+
+# === Secrets & Sessions ===
+.env
+.env.local
+.env.*.local
+.claude/
+
+# === Build artifacts ===
+node_modules/
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+*.log
+.DS_Store
+
+# === Nested git repos ===
+**/.git/
+!/.git

@@ -1,0 +1,560 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // connection_limit and pool_size managed via DATABASE_URL params:
+  // ?connection_limit=20&pool_timeout=30
+}
+
+// ─── Users & Auth ────────────────────────────────────────────────
+
+enum UserRole {
+  PLATFORM_ADMIN
+  USER
+}
+
+model User {
+  id                    String              @id @default(uuid())
+  email                 String              @unique
+  passwordHash          String
+  firstName             String
+  lastName              String
+  role                  UserRole            @default(USER)
+  emailVerified         Boolean             @default(false)
+  avatarUrl             String?
+  phone                 String?
+  locale                String              @default("en")
+  notificationEmail     Boolean             @default(true)
+  notificationSms       Boolean             @default(false)
+  notificationPush      Boolean             @default(true)
+  googleId              String?             @unique
+  createdAt             DateTime            @default(now())
+  deletedAt             DateTime?
+  updatedAt             DateTime            @updatedAt
+
+  refreshTokens         RefreshToken[]
+  memberships           TenantMembership[]
+  providerProfiles      ProviderProfile[]
+  patientAppointments   Appointment[]       @relation("PatientAppointments")
+  sentMessages          Message[]           @relation("SentMessages")
+  notifications         Notification[]
+  calendarConnections   CalendarConnection[]
+  auditLogs             AuditLog[]
+  consentRecords        ConsentRecord[]
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  tokenHash   String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── Multi-Tenancy ───────────────────────────────────────────────
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  PROVIDER
+}
+
+model Practice {
+  id                    String              @id @default(uuid())
+  name                  String
+  slug                  String              @unique
+  category              String?
+  timezone              String              @default("UTC")
+  currency              String              @default("USD")
+  phone                 String?
+  email                 String?
+  address               String?
+  logoUrl               String?
+  stripeAccountId       String?
+  subscriptionTier      String              @default("STARTER")
+  cancellationHours     Int                 @default(24)
+  reminderHoursBefore   Int                 @default(24)
+  active                Boolean             @default(true)
+  deletedAt             DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  memberships           TenantMembership[]
+  providerProfiles      ProviderProfile[]
+  services              Service[]
+  appointments          Appointment[]
+  intakeTemplates       IntakeFormTemplate[]
+  invitationTokens      InvitationToken[]
+  auditLogs             AuditLog[]
+
+  @@index([deletedAt])
+  @@map("practices")
+}
+
+model TenantMembership {
+  id          String          @id @default(uuid())
+  userId      String
+  practiceId  String
+  role        MembershipRole
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  practice    Practice        @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@unique([practiceId, userId])
+  @@index([userId])
+  @@map("tenant_memberships")
+}
+
+model InvitationToken {
+  id          String    @id @default(uuid())
+  tokenHash   String    @unique
+  email       String
+  role        MembershipRole
+  practiceId  String
+  practice    Practice  @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([practiceId])
+  @@map("invitation_tokens")
+}
+
+// ─── Providers & Services ────────────────────────────────────────
+
+model ProviderProfile {
+  id                String              @id @default(uuid())
+  userId            String
+  practiceId        String
+  specialties       String[]
+  credentials       String?
+  bio               String?
+  languages         String[]            @default(["en"])
+  consultationTypes String[]
+  active            Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  practice          Practice            @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  serviceProviders  ServiceProvider[]
+  availabilityRules AvailabilityRule[]
+  blockedDates      BlockedDate[]
+  appointments      Appointment[]
+  slotReservations  SlotReservation[]
+
+  @@unique([practiceId, userId])
+  @@map("provider_profiles")
+}
+
+model Service {
+  id                String              @id @default(uuid())
+  practiceId        String
+  name              String
+  description       String?
+  durationMinutes   Int
+  price             Decimal             @db.Decimal(10, 2)
+  currency          String              @default("USD")
+  confirmationMode  String              @default("AUTO_CONFIRM")
+  bufferBefore      Int                 @default(0)
+  bufferAfter       Int                 @default(0)
+  intakeTemplateId  String?
+  active            Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  practice          Practice            @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  intakeTemplate    IntakeFormTemplate?  @relation(fields: [intakeTemplateId], references: [id])
+  serviceProviders  ServiceProvider[]
+  appointments      Appointment[]
+
+  @@index([practiceId])
+  @@map("services")
+}
+
+model ServiceProvider {
+  id                String          @id @default(uuid())
+  serviceId         String
+  providerProfileId String
+
+  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  providerProfile   ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, providerProfileId])
+  @@map("service_providers")
+}
+
+// ─── Scheduling ──────────────────────────────────────────────────
+
+model AvailabilityRule {
+  id                String          @id @default(uuid())
+  providerProfileId String
+  dayOfWeek         Int
+  startTime         String
+  endTime           String
+  slotDuration      Int             @default(30)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  providerProfile   ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+
+  @@index([providerProfileId])
+  @@map("availability_rules")
+}
+
+model BlockedDate {
+  id                String          @id @default(uuid())
+  providerProfileId String
+  startDate         DateTime
+  endDate           DateTime
+  reason            String?
+  createdAt         DateTime        @default(now())
+
+  providerProfile   ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+
+  @@index([providerProfileId])
+  @@map("blocked_dates")
+}
+
+model SlotReservation {
+  id                String          @id @default(uuid())
+  providerProfileId String
+  startTime         DateTime
+  endTime           DateTime
+  sessionId         String
+  expiresAt         DateTime
+  createdAt         DateTime        @default(now())
+
+  providerProfile   ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+
+  @@index([providerProfileId, startTime])
+  @@map("slot_reservations")
+}
+
+// ─── Appointments ────────────────────────────────────────────────
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum ConsultationType {
+  VIDEO
+  IN_PERSON
+  PHONE
+}
+
+model Appointment {
+  id                  String              @id @default(uuid())
+  practiceId          String
+  patientId           String
+  providerProfileId   String
+  serviceId           String
+  startTime           DateTime
+  endTime             DateTime
+  status              AppointmentStatus   @default(PENDING)
+  consultationType    ConsultationType    @default(VIDEO)
+  notes               String?
+  cancellationReason  String?
+  confirmedAt         DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  deletedAt           DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  practice            Practice            @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  patient             User                @relation("PatientAppointments", fields: [patientId], references: [id])
+  providerProfile     ProviderProfile     @relation(fields: [providerProfileId], references: [id])
+  service             Service             @relation(fields: [serviceId], references: [id])
+  videoRoom           VideoRoom?
+  intakeSubmission    IntakeSubmission?
+  messages            Message[]
+  paymentRecord       PaymentRecord?
+  reminders           AppointmentReminder[]
+
+  @@unique([providerProfileId, startTime])
+  @@index([patientId])
+  @@index([practiceId, startTime])
+  @@index([practiceId, status])
+  @@index([deletedAt])
+  @@map("appointments")
+}
+
+// ─── Video ───────────────────────────────────────────────────────
+
+enum VideoRoomStatus {
+  CREATED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model VideoRoom {
+  id              String              @id @default(uuid())
+  appointmentId   String              @unique
+  roomName        String              @unique
+  roomSid         String?
+  status          VideoRoomStatus     @default(CREATED)
+  startedAt       DateTime?
+  endedAt         DateTime?
+  durationSeconds Int?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  appointment     Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  participants    VideoParticipant[]
+
+  @@map("video_rooms")
+}
+
+model VideoParticipant {
+  id          String    @id @default(uuid())
+  videoRoomId String
+  userId      String
+  identity    String
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime?
+
+  videoRoom   VideoRoom @relation(fields: [videoRoomId], references: [id], onDelete: Cascade)
+
+  @@index([videoRoomId])
+  @@map("video_participants")
+}
+
+// ─── Intake Forms ────────────────────────────────────────────────
+
+enum IntakeStatus {
+  PENDING
+  SUBMITTED
+  REVIEWED
+}
+
+model IntakeFormTemplate {
+  id          String              @id @default(uuid())
+  practiceId  String
+  name        String
+  fields      Json
+  active      Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  practice    Practice            @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  services    Service[]
+  submissions IntakeSubmission[]
+
+  @@index([practiceId])
+  @@map("intake_form_templates")
+}
+
+model IntakeSubmission {
+  id              String              @id @default(uuid())
+  appointmentId   String              @unique
+  templateId      String
+  responses       Json
+  status          IntakeStatus        @default(PENDING)
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  appointment     Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  template        IntakeFormTemplate   @relation(fields: [templateId], references: [id])
+
+  @@map("intake_submissions")
+}
+
+// ─── Communication ───────────────────────────────────────────────
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+}
+
+model Message {
+  id              String      @id @default(uuid())
+  appointmentId   String
+  senderId        String
+  content         String
+  type            MessageType @default(TEXT)
+  readAt          DateTime?
+  createdAt       DateTime    @default(now())
+
+  appointment     Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  sender          User        @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([appointmentId, createdAt])
+  @@map("messages")
+}
+
+enum NotificationType {
+  APPOINTMENT_CREATED
+  APPOINTMENT_CONFIRMED
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_REMINDER
+  MESSAGE_RECEIVED
+  VIDEO_ROOM_READY
+  PAYMENT_RECEIVED
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+model AppointmentReminder {
+  id            String      @id @default(uuid())
+  appointmentId String
+  scheduledFor  DateTime
+  sentAt        DateTime?
+  jobId         String?
+  createdAt     DateTime    @default(now())
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@map("appointment_reminders")
+}
+
+// ─── Payments ────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model PaymentRecord {
+  id                String        @id @default(uuid())
+  appointmentId     String        @unique
+  stripePaymentId   String?       @unique
+  amount            Decimal       @db.Decimal(10, 2)
+  platformFee       Decimal       @db.Decimal(10, 2)
+  currency          String        @default("USD")
+  status            PaymentStatus @default(PENDING)
+  refundedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  appointment       Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@map("payment_records")
+}
+
+// ─── Calendar Sync ───────────────────────────────────────────────
+
+enum CalendarProvider {
+  GOOGLE
+  OUTLOOK
+}
+
+model CalendarConnection {
+  id            String            @id @default(uuid())
+  userId        String
+  practiceId    String?
+  provider      CalendarProvider
+  accessToken   String
+  refreshToken  String?
+  expiresAt     DateTime?
+  calendarId    String?
+  active        Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events        CalendarEvent[]
+
+  @@unique([userId, provider])
+  @@map("calendar_connections")
+}
+
+model CalendarEvent {
+  id              String              @id @default(uuid())
+  connectionId    String
+  externalEventId String
+  title           String
+  startTime       DateTime
+  endTime         DateTime
+  direction       String              @default("outbound")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  connection      CalendarConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalEventId])
+  @@map("calendar_events")
+}
+
+// ─── Audit & Compliance ─────────────────────────────────────────
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  practiceId  String?
+  userId      String?
+  action      String
+  resource    String
+  resourceId  String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  practice    Practice? @relation(fields: [practiceId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([practiceId, createdAt])
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
+
+model ConsentRecord {
+  id          String    @id @default(uuid())
+  userId      String
+  consentType String
+  version     String
+  grantedAt   DateTime  @default(now())
+  revokedAt   DateTime?
+  ipAddress   String?
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("consent_records")
+}

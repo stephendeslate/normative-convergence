@@ -1,0 +1,91 @@
+version: '3.9'
+
+services:
+  # ─── Database ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: medconnect
+      POSTGRES_USER: medconnect
+      POSTGRES_PASSWORD: medconnect_dev
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U medconnect']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6380:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── API ───────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    environment:
+      LOG_LEVEL: info
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgresql://medconnect:medconnect_dev@postgres:5432/medconnect
+      REDIS_URL: redis://redis:6379
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      CORS_ORIGINS: http://localhost:3001
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-AC_placeholder}
+      TWILIO_API_KEY: ${TWILIO_API_KEY:-SK_placeholder}
+      TWILIO_API_SECRET: ${TWILIO_API_SECRET:-placeholder}
+      RESEND_API_KEY: ${RESEND_API_KEY:-re_placeholder}
+      EMAIL_FROM: noreply@medconnect.demo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── Web ───────────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:3000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

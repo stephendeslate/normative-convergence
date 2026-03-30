@@ -1,0 +1,27 @@
+{
+  "name": "medconnect",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:generate": "pnpm --filter @medconnect/api exec prisma generate",
+    "db:migrate": "pnpm --filter @medconnect/api exec prisma migrate deploy",
+    "db:seed": "pnpm --filter @medconnect/api exec prisma db seed",
+    "db:push": "pnpm --filter @medconnect/api exec prisma db push",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "prom-client": "^15.1.3"
+  }
+}

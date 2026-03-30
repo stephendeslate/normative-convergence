@@ -1,0 +1,30 @@
+{
+  "name": "medconnect",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "prisma migrate reset --schema=prisma/schema.prisma --force && pnpm db:seed",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "@types/node": "^22.x",
+    "prisma": "^6.x",
+    "tsx": "^4.x",
+    "turbo": "^2.x",
+    "typescript": "^5.7.0",
+    "vitest": "^3.x"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.x"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
